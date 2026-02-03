@@ -1,3 +1,6 @@
 streamlit
-watchdog
+pandas
+gspread
+oauth2client
 streamlit-extras
+watchdog
