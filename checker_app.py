@@ -15,7 +15,7 @@ except ImportError:
 st.set_page_config(page_title="F1 Score Checker", page_icon="📱", layout="centered")
 
 # --- GLOBAL SETTINGS ---
-TARGET_PROMPT = "I am a salaryman. I wake up early to catch the morning train. The office coffee is the fuel that keeps me going. Typing reports feels like a marathon of endless keystrokes. I dream of the weekend while staring at my screen."
+TARGET_PROMPT = "True strength is never built in isolation, but forged through the relentless effort of a united squad. When we pool our diverse talents, we inherently accomplish more than the mere sum of our separate actions. The heaviest burden feels surprisingly manageable when distributed evenly across dedicated shoulders. We must continuously align our strategies and protect each other's blind spots during the chaos. Only by moving as one cohesive unit can we shatter our perceived limits and secure the ultimate victory."
 WINNING_RESULT = "TT Connect 2026: Trust and Safety lang MALAKAS"
 
 # --- SESSION STATE ---
@@ -92,7 +92,7 @@ with c2:
 
 st.markdown("""
     <div style='text-align: center; margin-bottom: 20px;'>
-        <div style='font-weight: 900; letter-spacing: 3px; font-size: 1.8rem; color: #FFFFFF;'>FINAL QUEST</div>
+        <div style='font-weight: 900; letter-spacing: 3px; font-size: 1.8rem; color: #FFFFFF;'>PROMPT TESTER</div>
         <div style='font-weight: 400; letter-spacing: 1px; font-size: 0.9rem; color: #D71313; margin-top: 5px;'>ENTER MASTER PROMPT</div>
     </div>
     """, unsafe_allow_html=True)
