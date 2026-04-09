@@ -23,15 +23,13 @@ st.set_page_config(page_title="PHYSICAI Agent", page_icon="🛡️", layout="wid
 # --- GLOBAL SETTINGS ---
 TEAMS_LIST = [
     "BLUE ANALYSTS",
-    "GREEN DETECTIVES",
-    "YELLOW MEDIATORS",
     "GRAY SHIELDS",
-    "VIOLET STRATEGISTS",
-    "PINK FIREFIGHTERS"
+    "GREEN DETECTIVES",
+    "VIOLET STRATEGISTS"
 ]
 
 ADMIN_PASSWORD = "COMMUNITY"
-TARGET_PROMPT = "I am a salaryman. I wake up early to catch the morning train. The office coffee is the fuel that keeps me going. Typing reports feels like a marathon of endless keystrokes. I dream of the weekend while staring at my screen."
+TARGET_PROMPT = "True strength is never built in isolation, but forged through the relentless effort of a united squad. When we pool our diverse talents, we inherently accomplish more than the mere sum of our separate actions. The heaviest burden feels surprisingly manageable when distributed evenly across dedicated shoulders. We must continuously align our strategies and protect each other's blind spots during the chaos. Only by moving as one cohesive unit can we shatter our perceived limits and secure the ultimate victory."
 WINNING_RESULT = "TT Connect 2026: Trust and Safety lang MALAKAS"
 
 SHEET_NAME = "PhysicAI_Leaderboard"
@@ -128,7 +126,6 @@ def get_medal_standings(medal_df):
         silvers = len(medal_df[medal_df["Silver"] == team])
         bronzes = len(medal_df[medal_df["Bronze"] == team])
         sort_score = (golds * 3) + (silvers * 2) + (bronzes * 1)
-        # FIX: The colon was missing below
         standings.append({"Team": team, "🥇": golds, "🥈": silvers, "🥉": bronzes, "Sort": sort_score})
     
     df = pd.DataFrame(standings)
