@@ -30,7 +30,7 @@ TEAMS_LIST = [
 
 ADMIN_PASSWORD = "COMMUNITY"
 TARGET_PROMPT = "True strength is never built in isolation, but forged through the relentless effort of a united squad. When we pool our diverse talents, we inherently accomplish more than the mere sum of our separate actions. The heaviest burden feels surprisingly manageable when distributed evenly across dedicated shoulders. We must continuously align our strategies and protect each other's blind spots during the chaos. Only by moving as one cohesive unit can we shatter our perceived limits and secure the ultimate victory."
-WINNING_RESULT = "TT Connect 2026: Trust and Safety lang MALAKAS"
+WINNING_RESULT = "TT Connect 2026: Accomplish more"
 
 SHEET_NAME = "PhysicAI_Leaderboard"
 WORKSHEET_SCORES = "Sheet1"
@@ -74,7 +74,7 @@ def get_cached_medals():
                 return pd.DataFrame(data)
         except:
             pass
-    return pd.DataFrame(columns=["Quest", "Gold", "Silver", "Bronze"])
+    return pd.DataFrame(columns=["Quest", "Gold", "Silver", "Bronze", "Wood"])
 
 # --- WRITE FUNCTIONS ---
 def update_leaderboard(team_name, new_score):
@@ -92,10 +92,10 @@ def update_leaderboard(team_name, new_score):
             sheet.append_row([team_name, new_score])
     get_cached_leaderboard.clear()
 
-def record_medal_winners(quest_name, gold_team, silver_team, bronze_team):
+def record_medal_winners(quest_name, gold_team, silver_team, bronze_team, wood_team):
     sheet = connect_to_sheet(WORKSHEET_MEDALS)
     if sheet:
-        sheet.append_row([quest_name, gold_team, silver_team, bronze_team])
+        sheet.append_row([quest_name, gold_team, silver_team, bronze_team, wood_team])
     get_cached_medals.clear()
 
 def wipe_data():
@@ -107,7 +107,7 @@ def wipe_data():
     sheet2 = connect_to_sheet(WORKSHEET_MEDALS)
     if sheet2:
         sheet2.clear()
-        sheet2.append_row(["Quest", "Gold", "Silver", "Bronze"])
+        sheet2.append_row(["Quest", "Gold", "Silver", "Bronze", "Wood"])
     
     get_cached_leaderboard.clear()
     get_cached_medals.clear()
@@ -115,22 +115,28 @@ def wipe_data():
 # --- HELPER: MEDAL TALLY ---
 def get_medal_standings(medal_df):
     if medal_df.empty:
-        return pd.DataFrame(columns=["Team", "🥇", "🥈", "🥉"])
+        return pd.DataFrame(columns=["Team", "🥇", "🥈", "🥉", "🪵"])
     
-    all_teams = set(medal_df["Gold"]).union(set(medal_df["Silver"])).union(set(medal_df["Bronze"]))
+    has_wood = "Wood" in medal_df.columns
+    
+    all_teams = set(medal_df.get("Gold", [])).union(set(medal_df.get("Silver", []))).union(set(medal_df.get("Bronze", [])))
+    if has_wood:
+        all_teams = all_teams.union(set(medal_df["Wood"]))
     if "" in all_teams: all_teams.remove("")
     
     standings = []
     for team in all_teams:
-        golds = len(medal_df[medal_df["Gold"] == team])
-        silvers = len(medal_df[medal_df["Silver"] == team])
-        bronzes = len(medal_df[medal_df["Bronze"] == team])
+        golds = len(medal_df[medal_df["Gold"] == team]) if "Gold" in medal_df else 0
+        silvers = len(medal_df[medal_df["Silver"] == team]) if "Silver" in medal_df else 0
+        bronzes = len(medal_df[medal_df["Bronze"] == team]) if "Bronze" in medal_df else 0
+        woods = len(medal_df[medal_df["Wood"] == team]) if has_wood else 0
+        
         sort_score = (golds * 3) + (silvers * 2) + (bronzes * 1)
-        standings.append({"Team": team, "🥇": golds, "🥈": silvers, "🥉": bronzes, "Sort": sort_score})
+        standings.append({"Team": team, "🥇": golds, "🥈": silvers, "🥉": bronzes, "🪵": woods, "Sort": sort_score})
     
     df = pd.DataFrame(standings)
     if not df.empty:
-        df = df.sort_values(by="Sort", ascending=False).drop(columns=["Sort"])
+        df = df.sort_values(by=["Sort", "🥇", "🥈"], ascending=False).drop(columns=["Sort"])
     return df
 
 # --- SESSION STATE ---
@@ -160,7 +166,6 @@ st.markdown(f"""
     .stApp {{ {background_style} color: #FFFFFF; }}
     .stMarkdown p, .stMarkdown h3, .stMarkdown h2, .stMarkdown div {{ text-align: center !important; }}
     
-    /* INPUT FIELDS & DROPDOWNS */
     .stTextArea textarea, .stTextInput input, .stSelectbox div[data-baseweb="select"] {{
         background-color: rgba(0, 0, 0, 0.8) !important;
         color: #FFFFFF !important;
@@ -169,7 +174,6 @@ st.markdown(f"""
         text-align: center;
     }}
     
-    /* BUTTONS */
     .stButton > button {{
         background-color: #D71313;
         color: #FFFFFF;
@@ -182,30 +186,22 @@ st.markdown(f"""
     }}
     .stButton > button:hover {{ background-color: #ff1f1f; color: #FFFFFF; border: 1px solid white; }}
     
-    /* HIDE STREAMLIT UI */
     #MainMenu {{visibility: hidden;}} header {{visibility: hidden;}} footer {{visibility: hidden;}}
     
-    /* TABLES */
     th {{ background-color: #262626 !important; color: #D71313 !important; border-bottom: 2px solid #D71313 !important; }}
     td {{ background-color: #111 !important; color: white !important; border-bottom: 1px solid #333 !important; }}
     
-    /* --- ADMIN PANEL STYLING (NEW) --- */
-    /* Target the Expander container */
     div[data-testid="stExpander"] {{
         background-color: #111111 !important;
         border: 1px solid #444 !important;
         border-radius: 8px !important;
         margin-top: 20px;
     }}
-    /* Target the Header of the Expander */
     div[data-testid="stExpander"] details summary {{
         color: #888888 !important; 
         font-weight: bold !important;
     }}
-    div[data-testid="stExpander"] details[open] summary {{
-        color: #D71313 !important; /* Red when open */
-    }}
-    /* Target the Content inside the Expander */
+    div[data-testid="stExpander"] details[open] summary {{ color: #D71313 !important; }}
     div[data-testid="stExpander"] div[data-testid="stExpanderContent"] {{
         background-color: #000000 !important;
         color: white !important;
@@ -283,6 +279,8 @@ with right_col:
         else: st.error("❌ FAILED LIFT // NO REP")
 
 st.divider()
+
+# --- SCOREBOARDS SECTION ---
 lb_col1, lb_col2 = st.columns(2, gap="large")
 
 with lb_col1:
@@ -294,20 +292,44 @@ with lb_col1:
 
 with lb_col2:
     st.markdown("<h3 style='text-align: center; color: #888; letter-spacing: 2px; font-size:1.2rem;'>// MEDAL STANDINGS //</h3>", unsafe_allow_html=True)
-    df_medals = get_medal_standings(get_cached_medals()) 
+    df_medals_raw = get_cached_medals()
+    df_medals = get_medal_standings(df_medals_raw) 
     if not df_medals.empty: st.dataframe(df_medals, hide_index=True, use_container_width=True, column_config={"Team": st.column_config.TextColumn("SQUAD")})
     else: st.caption("AWAITING QUEST RESULTS...")
 
+# --- QUEST ARCHIVE LOG ---
+st.write("")
+st.markdown("<h3 style='text-align: center; color: #888; letter-spacing: 2px; font-size:1.2rem;'>// QUEST ARCHIVE //</h3>", unsafe_allow_html=True)
+
+if not df_medals_raw.empty and len(df_medals_raw) > 0:
+    # Sort the dataframe alphabetically by the "Quest" column
+    df_sorted_archive = df_medals_raw.sort_values(by="Quest", ascending=True)
+    
+    st.dataframe(
+        df_sorted_archive, 
+        hide_index=True, 
+        use_container_width=True,
+        column_config={
+            "Quest": st.column_config.TextColumn("ACTIVITY"), # Changed to ACTIVITY
+            "Gold": st.column_config.TextColumn("🥇 GOLD"),
+            "Silver": st.column_config.TextColumn("🥈 SILVER"),
+            "Bronze": st.column_config.TextColumn("🥉 BRONZE"),
+            "Wood": st.column_config.TextColumn("🪵 WOOD")
+        }
+    )
+else:
+    st.caption("NO QUEST LOGS DETECTED...")
+
 st.write(""); st.write("")
 
-# --- UPDATED ADMIN PANEL WITH CSS BOX ---
+# --- UPDATED ADMIN PANEL ---
 with st.expander("⚙️ ADMIN PROTOCOLS (RESTRICTED)"):
     if not st.session_state['admin_logged_in']:
         c_pass, c_btn = st.columns([3, 1])
         with c_pass:
             admin_pass_input = st.text_input("ENTER ADMIN KEY:", type="password", key="login_pass")
         with c_btn:
-            st.write("") # Spacer to align button
+            st.write("") 
             st.write("") 
             if st.button("🔓 LOGIN", use_container_width=True):
                 if admin_pass_input == ADMIN_PASSWORD:
@@ -322,28 +344,31 @@ with st.expander("⚙️ ADMIN PROTOCOLS (RESTRICTED)"):
         
         with tab1:
             st.info("Award Medals (Auto-filters previously selected teams)")
-            quest_select = st.selectbox("Select Quest:", ["Quest 1", "Quest 2", "Quest 3", "Quest 4", "Quest 5"])
+            quest_select = st.selectbox("Select Quest:", ["QUEST 1: BEACH VOLLEYBALL", "QUEST 2: BADMINTON", "Quest 3", "Quest 4", "Quest 5"])
             
-            # SMART FILTERING (Requires Page Reload)
-            col_g, col_s, col_b = st.columns(3)
+            # SMART FILTERING FOR ALL 4 TEAMS
+            col_g, col_s, col_b, col_w = st.columns(4)
             with col_g:
-                gold = st.selectbox("🥇 GOLD", TEAMS_LIST, index=None, placeholder="Winner")
+                gold = st.selectbox("🥇 GOLD", TEAMS_LIST, index=None, placeholder="1st")
             silver_options = [t for t in TEAMS_LIST if t != gold] if gold else TEAMS_LIST
             with col_s:
                 silver = st.selectbox("🥈 SILVER", silver_options, index=None, placeholder="2nd")
             bronze_options = [t for t in silver_options if t != silver] if silver else silver_options
             with col_b:
                 bronze = st.selectbox("🥉 BRONZE", bronze_options, index=None, placeholder="3rd")
+            wood_options = [t for t in bronze_options if t != bronze] if bronze else bronze_options
+            with col_w:
+                wood = st.selectbox("🪵 WOOD", wood_options, index=None, placeholder="4th")
             
             if st.button("SUBMIT MEDAL RESULTS", use_container_width=True):
-                if gold and silver and bronze:
+                if gold and silver and bronze and wood:
                     with st.spinner("Writing to Database..."):
-                        record_medal_winners(quest_select, gold, silver, bronze)
+                        record_medal_winners(quest_select, gold, silver, bronze, wood)
                     st.success(f"Saved: {quest_select}")
                     time.sleep(1)
                     st.rerun()
                 else:
-                    st.warning("⚠️ Select all 3 winners first.")
+                    st.warning("⚠️ Select all 4 placements first.")
 
         with tab2:
             st.warning("This action cannot be undone.")
