@@ -369,5 +369,5 @@ with st.expander("⚙️ ADMIN PROTOCOLS (RESTRICTED)"):
             st.rerun()
 
 # --- AUTO REFRESH LOOP ---
-time.sleep(10)
+time.sleep(60)
 st.rerun()
