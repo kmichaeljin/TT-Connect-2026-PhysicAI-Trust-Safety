@@ -1,24 +1,15 @@
 import streamlit as st
 import pandas as pd
-import string
 import base64
 import os
 import time
-from collections import Counter
 
 # --- GOOGLE SHEETS IMPORTS ---
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-# --- NEW IMPORT FOR RAIN EFFECT ---
-try:
-    from streamlit_extras.let_it_rain import rain
-except ImportError:
-    def rain(emoji, font_size, falling_speed, animation_length):
-        st.error("⚠️ Install 'streamlit-extras' to see the rain effect.")
-
 # --- CONFIGURATION ---
-st.set_page_config(page_title="PHYSICAI Agent", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="PHYSICAI Main Dashboard", page_icon="🛡️", layout="wide")
 
 # --- GLOBAL SETTINGS ---
 TEAMS_LIST = [
@@ -28,15 +19,20 @@ TEAMS_LIST = [
     "VIOLET STRATEGISTS"
 ]
 
+SQUADS_DATA = [
+    {"name": "BLUE ANALYSTS", "img": "blue_team.png"},
+    {"name": "GRAY SHIELDS", "img": "gray_team.png"},
+    {"name": "GREEN DETECTIVES", "img": "green_team.png"},
+    {"name": "VIOLET STRATEGISTS", "img": "violet_team.png"}
+]
+
 ADMIN_PASSWORD = "COMMUNITY"
-TARGET_PROMPT = "True strength is never built in isolation, but forged through the relentless effort of a united squad. When we pool our diverse talents, we inherently accomplish more than the mere sum of our separate actions. The heaviest burden feels surprisingly manageable when distributed evenly across dedicated shoulders. We must continuously align our strategies and protect each other's blind spots during the chaos. Only by moving as one cohesive unit can we shatter our perceived limits and secure the ultimate victory."
-WINNING_RESULT = "TT Connect 2026: Accomplish more"
 
 SHEET_NAME = "PhysicAI_Leaderboard"
 WORKSHEET_SCORES = "Sheet1"
 WORKSHEET_MEDALS = "Medals"
 
-# --- CACHED CONNECTION (FIXES LAG) ---
+# --- CACHED CONNECTION ---
 @st.cache_resource
 def get_gspread_client():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
@@ -51,7 +47,7 @@ def connect_to_sheet(worksheet_name):
     except Exception as e:
         return None
 
-# --- CACHED DATA LOADING ---
+# --- CACHED DATA LOADING (AUTO-REFRESHING) ---
 @st.cache_data(ttl=5)
 def get_cached_leaderboard():
     sheet = connect_to_sheet(WORKSHEET_SCORES)
@@ -76,22 +72,6 @@ def get_cached_medals():
             pass
     return pd.DataFrame(columns=["Quest", "Gold", "Silver", "Bronze", "Wood"])
 
-# --- WRITE FUNCTIONS ---
-def update_leaderboard(team_name, new_score):
-    sheet = connect_to_sheet(WORKSHEET_SCORES)
-    if sheet:
-        data = sheet.get_all_records()
-        df = pd.DataFrame(data)
-        
-        if not df.empty and team_name in df["Team"].values:
-            row_idx = df.index[df["Team"] == team_name].tolist()[0] + 2
-            current_best = df.loc[df["Team"] == team_name, "Score"].max()
-            if new_score > current_best:
-                sheet.update_cell(row_idx, 2, new_score)
-        else:
-            sheet.append_row([team_name, new_score])
-    get_cached_leaderboard.clear()
-
 def record_medal_winners(quest_name, gold_team, silver_team, bronze_team, wood_team):
     sheet = connect_to_sheet(WORKSHEET_MEDALS)
     if sheet:
@@ -112,13 +92,11 @@ def wipe_data():
     get_cached_leaderboard.clear()
     get_cached_medals.clear()
 
-# --- HELPER: MEDAL TALLY ---
 def get_medal_standings(medal_df):
     if medal_df.empty:
         return pd.DataFrame(columns=["Team", "🥇", "🥈", "🥉", "🪵"])
     
     has_wood = "Wood" in medal_df.columns
-    
     all_teams = set(medal_df.get("Gold", [])).union(set(medal_df.get("Silver", []))).union(set(medal_df.get("Bronze", [])))
     if has_wood:
         all_teams = all_teams.union(set(medal_df["Wood"]))
@@ -140,9 +118,6 @@ def get_medal_standings(medal_df):
     return df
 
 # --- SESSION STATE ---
-if 'f1_score' not in st.session_state: st.session_state['f1_score'] = 0.0
-if 'precision' not in st.session_state: st.session_state['precision'] = 0.0
-if 'recall' not in st.session_state: st.session_state['recall'] = 0.0
 if 'admin_logged_in' not in st.session_state: st.session_state['admin_logged_in'] = False
 
 # --- ASSETS & CSS ---
@@ -166,62 +141,19 @@ st.markdown(f"""
     .stApp {{ {background_style} color: #FFFFFF; }}
     .stMarkdown p, .stMarkdown h3, .stMarkdown h2, .stMarkdown div {{ text-align: center !important; }}
     
-    .stTextArea textarea, .stTextInput input, .stSelectbox div[data-baseweb="select"] {{
-        background-color: rgba(0, 0, 0, 0.8) !important;
-        color: #FFFFFF !important;
-        border: 2px solid #D71313 !important;
-        border-radius: 5px;
-        text-align: center;
-    }}
-    
-    .stButton > button {{
-        background-color: #D71313;
-        color: #FFFFFF;
-        font-weight: 800;
-        border: none;
-        border-radius: 5px;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        height: 50px; 
-    }}
-    .stButton > button:hover {{ background-color: #ff1f1f; color: #FFFFFF; border: 1px solid white; }}
-    
     #MainMenu {{visibility: hidden;}} header {{visibility: hidden;}} footer {{visibility: hidden;}}
     
     th {{ background-color: #262626 !important; color: #D71313 !important; border-bottom: 2px solid #D71313 !important; }}
     td {{ background-color: #111 !important; color: white !important; border-bottom: 1px solid #333 !important; }}
     
-    div[data-testid="stExpander"] {{
-        background-color: #111111 !important;
-        border: 1px solid #444 !important;
-        border-radius: 8px !important;
-        margin-top: 20px;
-    }}
-    div[data-testid="stExpander"] details summary {{
-        color: #888888 !important; 
-        font-weight: bold !important;
-    }}
+    div[data-testid="stExpander"] {{ background-color: #111111 !important; border: 1px solid #444 !important; border-radius: 8px !important; margin-top: 20px; }}
+    div[data-testid="stExpander"] details summary {{ color: #888888 !important; font-weight: bold !important; }}
     div[data-testid="stExpander"] details[open] summary {{ color: #D71313 !important; }}
-    div[data-testid="stExpander"] div[data-testid="stExpanderContent"] {{
-        background-color: #000000 !important;
-        color: white !important;
-        padding: 20px !important;
-        border-top: 1px solid #333 !important;
-    }}
+    div[data-testid="stExpander"] div[data-testid="stExpanderContent"] {{ background-color: #000000 !important; color: white !important; padding: 20px !important; border-top: 1px solid #333 !important; }}
     </style>
     """, unsafe_allow_html=True)
 
-# --- F1 LOGIC ---
-def calculate_f1(prediction, ground_truth):
-    def normalize(text):
-        return text.lower().translate(str.maketrans('', '', string.punctuation)).split()
-    pred, truth = normalize(prediction), normalize(ground_truth)
-    if not pred or not truth: return 0.0, 0.0, 0.0
-    common = sum((Counter(pred) & Counter(truth)).values())
-    p, r = common / len(pred), common / len(truth)
-    return (0.0 if p + r == 0 else 2 * (p * r) / (p + r)), p, r
-
-# --- LAYOUT ---
+# --- LAYOUT: TOP SECTION ---
 left_col, right_col = st.columns([1, 1], gap="large")
 
 with left_col:
@@ -230,53 +162,33 @@ with left_col:
         if os.path.exists("physicai_logo.png"): st.image("physicai_logo.png", use_container_width=True) 
         elif os.path.exists("company_logo.png"): st.image("company_logo.png", width=100)
     
+    st.write("")
+    st.write("")
     st.markdown("""
         <div style='text-align: center; margin-bottom: 30px;'>
-            <div style='font-weight: 900; letter-spacing: 3px; font-size: 2rem; color: #FFFFFF;'>FINAL QUEST</div>
-            <div style='font-weight: 400; letter-spacing: 1px; font-size: 1rem; color: #D71313; margin-top: 5px;'>ENTER YOUR MASTER PROMPT</div>
+            <div style='font-weight: 900; letter-spacing: 3px; font-size: 2.5rem; color: #FFFFFF;'>MAIN DASHBOARD</div>
+            <div style='font-weight: 400; letter-spacing: 1px; font-size: 0.9rem; color: #D71313; margin-top: 5px;'>current build made by kmichaeljin | FB</div>
         </div>
         """, unsafe_allow_html=True)
 
-    f1_val, prec_val, rec_val = st.session_state['f1_score'], st.session_state['precision'], st.session_state['recall']
-    st.markdown(f"""
-        <div style="background-color: #262626; border: 2px solid #D71313; border-radius: 8px; padding: 20px; margin-bottom: 20px; display: flex; justify-content: space-around; align-items: center;">
-            <div style="text-align: center;"><div style="color: #AAA; font-size: 0.8rem;">F1 SCORE</div><div style="color: #D71313; font-size: 2.5rem; font-weight: 900;">{int(f1_val * 100)}%</div></div>
-            <div style="width: 1px; height: 50px; background-color: #444;"></div>
-            <div style="text-align: center;"><div style="color: #AAA; font-size: 0.8rem;">PRECISION</div><div style="color: #D71313; font-size: 2.5rem; font-weight: 900;">{int(prec_val * 100)}%</div></div>
-            <div style="width: 1px; height: 50px; background-color: #444;"></div>
-            <div style="text-align: center;"><div style="color: #AAA; font-size: 0.8rem;">RECALL</div><div style="color: #D71313; font-size: 2.5rem; font-weight: 900;">{int(rec_val * 100)}%</div></div>
-        </div>
-    """, unsafe_allow_html=True)
-
 with right_col:
-    st.write(""); st.write("")
-    st.markdown("<p style='color: #888; font-size: 0.8rem; margin-bottom: 5px; text-align: center;'>IDENTIFY YOUR SQUAD</p>", unsafe_allow_html=True)
-    team_name_input = st.selectbox("Team Name", TEAMS_LIST, index=None, placeholder="SELECT YOUR TEAM", label_visibility="collapsed")
     st.write("")
-    st.markdown("<p style='color: #888; font-size: 0.8rem; margin-bottom: 5px; text-align: center;'>INPUT SEQUENCE</p>", unsafe_allow_html=True)
-    user_input = st.text_area("Input Phrase:", placeholder="Type code here...", label_visibility="collapsed", height=150)
-    st.write("")
+    st.markdown("<h3 style='text-align: center; color: #888; letter-spacing: 2px; font-size:1.2rem; margin-bottom: 15px;'>// SQUADS //</h3>", unsafe_allow_html=True)
     
-    if st.button("LOCK IN", use_container_width=True): 
-        if not user_input or not team_name_input:
-            st.error("⚠️ PROMPT AND TEAM REQUIRED")
-        else:
-            f1, prec, rec = calculate_f1(user_input, TARGET_PROMPT)
-            st.session_state.update({'f1_score': f1, 'precision': prec, 'recall': rec})
-            update_leaderboard(team_name_input.upper(), int(f1 * 100))
-            st.rerun()
-
-    if st.session_state['f1_score'] > 0:
-        f1_score = st.session_state['f1_score']
-        st.write("")
-        if f1_score == 1.0:
-            try: rain(emoji="🟥 ⬜ 🛡️", font_size=54, falling_speed=5, animation_length="3s")
-            except: st.balloons()
-            st.toast("🔒 QUEST COMPLETE", icon="✅")
-            st.markdown(f"""<div style="background-color: #000; border: 1px solid #00FF41; padding: 20px; text-align: center; box-shadow: 0 0 20px rgba(0,255,65,0.2);"><h3 style="color: #FFF; font-size: 0.8rem; opacity: 0.8;">QUEST STATUS:</h3><h1 style="color: #00FF41; margin: 15px 0; font-size: 1.5rem; font-weight: 900;">{WINNING_RESULT}</h1></div>""", unsafe_allow_html=True)
-        elif f1_score >= 0.8: st.warning(f"⚠️ FORM CHECK // ONE REP LEFT: {int(f1_score*100)}%")
-        elif f1_score >= 0.5: st.info(f"⚠️ NOT STRONG ENOUGH: {int(f1_score*100)}%")
-        else: st.error("❌ FAILED LIFT // NO REP")
+    # EXACTLY 1 ROW, 4 COLUMNS
+    img_cols = st.columns(4)
+    
+    for i, squad in enumerate(SQUADS_DATA):
+        with img_cols[i]:
+            st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
+            if os.path.exists(squad["img"]):
+                bin_str = get_base64_of_bin_file(squad["img"])
+                st.markdown(f"<img src='data:image/png;base64,{bin_str}' style='width: 150px; height: 150px; object-fit: cover; border-radius: 10px; border: 2px solid #444;'>", unsafe_allow_html=True)
+            else:
+                st.markdown("<div style='width: 150px; height: 150px; background-color: #222; border-radius: 10px; border: 2px solid #444; display: inline-flex; align-items: center; justify-content: center; color: #555; margin: 0 auto; font-size: 0.8rem;'>PENDING</div>", unsafe_allow_html=True)
+            
+            st.markdown(f"<div style='margin-top: 10px; font-weight: 900; font-size: 0.8rem; color: #FFF; letter-spacing: 1px;'>{squad['name']}</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
 st.divider()
 
@@ -302,15 +214,11 @@ st.write("")
 st.markdown("<h3 style='text-align: center; color: #888; letter-spacing: 2px; font-size:1.2rem;'>// QUEST ARCHIVE //</h3>", unsafe_allow_html=True)
 
 if not df_medals_raw.empty and len(df_medals_raw) > 0:
-    # Sort the dataframe alphabetically by the "Quest" column
     df_sorted_archive = df_medals_raw.sort_values(by="Quest", ascending=True)
-    
     st.dataframe(
-        df_sorted_archive, 
-        hide_index=True, 
-        use_container_width=True,
+        df_sorted_archive, hide_index=True, use_container_width=True,
         column_config={
-            "Quest": st.column_config.TextColumn("ACTIVITY"), # Changed to ACTIVITY
+            "Quest": st.column_config.TextColumn("ACTIVITY"),
             "Gold": st.column_config.TextColumn("🥇 GOLD"),
             "Silver": st.column_config.TextColumn("🥈 SILVER"),
             "Bronze": st.column_config.TextColumn("🥉 BRONZE"),
@@ -319,6 +227,91 @@ if not df_medals_raw.empty and len(df_medals_raw) > 0:
     )
 else:
     st.caption("NO QUEST LOGS DETECTED...")
+
+# --- CHAMPION SHOWCASE WITH TIE-BREAKER LOGIC ---
+st.write("")
+st.write("")
+st.markdown("<h3 style='text-align: center; color: #FFD700; letter-spacing: 2px; font-size:1.5rem;'>// TOURNAMENT CHAMPION //</h3>", unsafe_allow_html=True)
+
+winning_team = None
+tie_breaker_mode = False
+tied_teams_list = []
+
+# ONLY trigger the Champion logic if ALL 4 teams have locked in an F1 score AND ALL 5 Quests are logged
+teams_with_scores = df_scores["Team"].tolist() if not df_scores.empty else []
+all_teams_finished = all(team in teams_with_scores for team in TEAMS_LIST)
+
+all_quests_finished = False
+if not df_medals_raw.empty:
+    all_quests_finished = len(df_medals_raw["Quest"].unique()) >= 5
+
+if all_teams_finished and all_quests_finished:
+    max_f1 = df_scores["Score"].max()
+    top_f1_teams = df_scores[df_scores["Score"] == max_f1]["Team"].tolist()
+    
+    if len(top_f1_teams) == 1:
+        winning_team = top_f1_teams[0]
+    else:
+        # Tie-breaker 1: Highest Gold Medals
+        gold_counts = {}
+        for t in top_f1_teams:
+            if not df_medals.empty and t in df_medals["Team"].values:
+                golds = df_medals.loc[df_medals["Team"] == t, "🥇"].values[0]
+            else:
+                golds = 0
+            gold_counts[t] = golds
+        
+        max_golds = max(gold_counts.values()) if gold_counts else 0
+        top_gold_teams = [t for t, g in gold_counts.items() if g == max_golds]
+        
+        if len(top_gold_teams) == 1:
+            winning_team = top_gold_teams[0]
+        else:
+            tie_breaker_mode = True
+            tied_teams_list = top_gold_teams
+
+if winning_team:
+    winning_img_path = ""
+    for sq in SQUADS_DATA:
+        if sq["name"] == winning_team:
+            winning_img_path = sq["img"]
+            break
+    
+    img_tag = ""
+    if os.path.exists(winning_img_path):
+        bin_str = get_base64_of_bin_file(winning_img_path)
+        img_tag = f"<img src='data:image/png;base64,{bin_str}' style='width: 300px; height: 300px; object-fit: cover; border-radius: 15px; border: 4px solid #FFD700; box-shadow: 0 0 25px rgba(255,215,0,0.6);'>"
+    else:
+        img_tag = "<div style='width: 300px; height: 300px; background-color: #222; border-radius: 15px; border: 4px solid #FFD700; display: inline-flex; align-items: center; justify-content: center; color: #FFD700; font-weight: 900; font-size: 1.5rem;'>PENDING</div>"
+
+    st.markdown(f"""
+    <div style="border: 2px solid #FFD700; border-radius: 15px; padding: 40px; background: linear-gradient(135deg, #1a1a1a 0%, #000000 100%); display: flex; align-items: center; justify-content: center; margin-top: 10px; margin-bottom: 20px; box-shadow: 0 0 30px rgba(255, 215, 0, 0.3);">
+        <div style="flex: 1; text-align: right; padding-right: 50px; border-right: 2px solid #333;">
+            {img_tag}
+        </div>
+        <div style="flex: 2; padding-left: 50px; text-align: left;">
+            <div style="color: #FFD700; font-size: 4rem; margin: 0; font-weight: 900; letter-spacing: 4px; line-height: 1.1;">CONGRATULATIONS</div>
+            <div style="color: #FFFFFF; font-size: 3rem; margin-top: 15px; font-weight: 900; letter-spacing: 2px;">🏆 {winning_team} 🏆</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+elif tie_breaker_mode:
+    tied_teams_str = " VS ".join(f"<span style='color: #FFF;'>{t}</span>" for t in tied_teams_list)
+    st.markdown(f"""
+    <div style="border: 2px solid #D71313; border-radius: 15px; padding: 40px; text-align: center; background: linear-gradient(135deg, #2a0000 0%, #000000 100%); margin-top: 10px; margin-bottom: 20px; box-shadow: 0 0 30px rgba(215, 19, 19, 0.4);">
+        <h1 style="color: #D71313; letter-spacing: 4px; margin: 0; font-size: 3rem; font-weight: 900;">🚨 SUDDEN DEATH REQUIRED 🚨</h1>
+        <h3 style="color: #AAA; letter-spacing: 2px; margin-top: 15px; margin-bottom: 25px;">F1 SCORES AND GOLD MEDALS ARE DEADLOCKED</h3>
+        <h2 style="font-size: 2.5rem; margin: 0;">{tied_teams_str}</h2>
+    </div>
+    """, unsafe_allow_html=True)
+
+else:
+    st.markdown("""
+    <div style="border: 2px dashed #444; border-radius: 15px; padding: 40px; text-align: center; margin-top: 10px; margin-bottom: 20px;">
+        <h2 style="color: #555; letter-spacing: 2px; margin: 0;">AWAITING ALL 5 QUESTS & FINAL PROMPT SUBMISSIONS...</h2>
+    </div>
+    """, unsafe_allow_html=True)
 
 st.write(""); st.write("")
 
@@ -329,8 +322,7 @@ with st.expander("⚙️ ADMIN PROTOCOLS (RESTRICTED)"):
         with c_pass:
             admin_pass_input = st.text_input("ENTER ADMIN KEY:", type="password", key="login_pass")
         with c_btn:
-            st.write("") 
-            st.write("") 
+            st.write(""); st.write("") 
             if st.button("🔓 LOGIN", use_container_width=True):
                 if admin_pass_input == ADMIN_PASSWORD:
                     st.session_state['admin_logged_in'] = True
@@ -339,26 +331,19 @@ with st.expander("⚙️ ADMIN PROTOCOLS (RESTRICTED)"):
                     st.error("❌ INVALID KEY")
     else:
         st.success("✅ SYSTEM ACCESS GRANTED")
-        
         tab1, tab2 = st.tabs(["🏅 AWARD MEDALS", "🔴 DANGER ZONE"])
         
         with tab1:
             st.info("Award Medals (Auto-filters previously selected teams)")
-            quest_select = st.selectbox("Select Quest:", ["QUEST 1: BEACH VOLLEYBALL", "QUEST 2: BADMINTON", "Quest 3", "Quest 4", "Quest 5"])
-            
-            # SMART FILTERING FOR ALL 4 TEAMS
+            quest_select = st.selectbox("Select Quest:", ["QUEST 1: BEACH VOLLEYBALL", "QUEST 2: BADMINTON", "QUEST 3: KARAOKE RELAY", "QUEST 4: BOTTLE FLIP TIC TAC TOE", "QUEST 5: BLIND GOLFER"])
             col_g, col_s, col_b, col_w = st.columns(4)
-            with col_g:
-                gold = st.selectbox("🥇 GOLD", TEAMS_LIST, index=None, placeholder="1st")
+            with col_g: gold = st.selectbox("🥇 GOLD", TEAMS_LIST, index=None, placeholder="1st")
             silver_options = [t for t in TEAMS_LIST if t != gold] if gold else TEAMS_LIST
-            with col_s:
-                silver = st.selectbox("🥈 SILVER", silver_options, index=None, placeholder="2nd")
+            with col_s: silver = st.selectbox("🥈 SILVER", silver_options, index=None, placeholder="2nd")
             bronze_options = [t for t in silver_options if t != silver] if silver else silver_options
-            with col_b:
-                bronze = st.selectbox("🥉 BRONZE", bronze_options, index=None, placeholder="3rd")
+            with col_b: bronze = st.selectbox("🥉 BRONZE", bronze_options, index=None, placeholder="3rd")
             wood_options = [t for t in bronze_options if t != bronze] if bronze else bronze_options
-            with col_w:
-                wood = st.selectbox("🪵 WOOD", wood_options, index=None, placeholder="4th")
+            with col_w: wood = st.selectbox("🪵 WOOD", wood_options, index=None, placeholder="4th")
             
             if st.button("SUBMIT MEDAL RESULTS", use_container_width=True):
                 if gold and silver and bronze and wood:
@@ -383,4 +368,6 @@ with st.expander("⚙️ ADMIN PROTOCOLS (RESTRICTED)"):
             st.session_state['admin_logged_in'] = False
             st.rerun()
 
-st.caption("PHYSICAI // TRUST & SAFETY BREAKOUT SESSION")
+# --- AUTO REFRESH LOOP ---
+time.sleep(10)
+st.rerun()
