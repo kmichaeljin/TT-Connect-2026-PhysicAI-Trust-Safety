@@ -119,6 +119,7 @@ def get_medal_standings(medal_df):
 
 # --- SESSION STATE ---
 if 'admin_logged_in' not in st.session_state: st.session_state['admin_logged_in'] = False
+if 'reveal_stage' not in st.session_state: st.session_state['reveal_stage'] = 0 # 0=Locked, 1=4th, 2=3rd, 3=2nd, 4=Champion
 
 # --- ASSETS & CSS ---
 def get_base64_of_bin_file(bin_file):
@@ -150,6 +151,14 @@ st.markdown(f"""
     div[data-testid="stExpander"] details summary {{ color: #888888 !important; font-weight: bold !important; }}
     div[data-testid="stExpander"] details[open] summary {{ color: #D71313 !important; }}
     div[data-testid="stExpander"] div[data-testid="stExpanderContent"] {{ background-color: #000000 !important; color: white !important; padding: 20px !important; border-top: 1px solid #333 !important; }}
+    
+    .stButton > button {{
+        font-weight: 900 !important;
+        letter-spacing: 2px !important;
+        border-radius: 8px !important;
+        transition: all 0.3s ease !important;
+        height: 60px !important;
+    }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -175,7 +184,6 @@ with right_col:
     st.write("")
     st.markdown("<h3 style='text-align: center; color: #888; letter-spacing: 2px; font-size:1.2rem; margin-bottom: 15px;'>// SQUADS //</h3>", unsafe_allow_html=True)
     
-    # EXACTLY 1 ROW, 4 COLUMNS
     img_cols = st.columns(4)
     
     for i, squad in enumerate(SQUADS_DATA):
@@ -228,16 +236,11 @@ if not df_medals_raw.empty and len(df_medals_raw) > 0:
 else:
     st.caption("NO QUEST LOGS DETECTED...")
 
-# --- CHAMPION SHOWCASE WITH TIE-BREAKER LOGIC ---
+# --- CHAMPION SHOWCASE & PROGRESSIVE RANKINGS ---
 st.write("")
 st.write("")
-st.markdown("<h3 style='text-align: center; color: #FFD700; letter-spacing: 2px; font-size:1.5rem;'>// TOURNAMENT CHAMPION //</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center; color: #FFD700; letter-spacing: 2px; font-size:1.5rem;'>// TOURNAMENT RANKINGS //</h3>", unsafe_allow_html=True)
 
-winning_team = None
-tie_breaker_mode = False
-tied_teams_list = []
-
-# ONLY trigger the Champion logic if ALL 4 teams have locked in an F1 score AND ALL 5 Quests are logged
 teams_with_scores = df_scores["Team"].tolist() if not df_scores.empty else []
 all_teams_finished = all(team in teams_with_scores for team in TEAMS_LIST)
 
@@ -246,65 +249,127 @@ if not df_medals_raw.empty:
     all_quests_finished = len(df_medals_raw["Quest"].unique()) >= 5
 
 if all_teams_finished and all_quests_finished:
-    max_f1 = df_scores["Score"].max()
-    top_f1_teams = df_scores[df_scores["Score"] == max_f1]["Team"].tolist()
     
-    if len(top_f1_teams) == 1:
-        winning_team = top_f1_teams[0]
+    stage = st.session_state['reveal_stage']
+
+    # --- Reveal Controller Buttons ---
+    c_btn1, c_btn2, c_btn3 = st.columns([1,2,1])
+    with c_btn2:
+        if stage == 0:
+            if st.button("🪵 REVEAL 4TH PLACE", use_container_width=True):
+                st.session_state['reveal_stage'] = 1
+                st.rerun()
+        elif stage == 1:
+            if st.button("🥉 REVEAL 3RD PLACE", use_container_width=True):
+                st.session_state['reveal_stage'] = 2
+                st.rerun()
+        elif stage == 2:
+            if st.button("🥈 REVEAL 2ND PLACE", use_container_width=True):
+                st.session_state['reveal_stage'] = 3
+                st.rerun()
+        elif stage == 3:
+            if st.button("🏆 REVEAL TOURNAMENT CHAMPION 🏆", use_container_width=True):
+                st.session_state['reveal_stage'] = 4
+                st.rerun()
+        elif stage == 4:
+            if st.button("🔒 HIDE RANKINGS (RESET)", use_container_width=True):
+                st.session_state['reveal_stage'] = 0
+                st.rerun()
+    st.write("")
+
+    # --- Data Sorting ---
+    ranking_data = []
+    for team in TEAMS_LIST:
+        score = 0
+        if not df_scores.empty and team in df_scores["Team"].values:
+            score = df_scores.loc[df_scores["Team"] == team, "Score"].max()
+            
+        g, s, b = 0, 0, 0
+        if not df_medals.empty and team in df_medals["Team"].values:
+            team_row = df_medals[df_medals["Team"] == team].iloc[0]
+            g, s, b = team_row.get("🥇", 0), team_row.get("🥈", 0), team_row.get("🥉", 0)
+            
+        ranking_data.append({"Team": team, "Score": score, "G": g, "S": s, "B": b})
+
+    # Sort: Highest F1 -> Highest Gold -> Highest Silver -> Highest Bronze
+    ranking_data.sort(key=lambda x: (x["Score"], x["G"], x["S"], x["B"]), reverse=True)
+    
+    # HTML Generators
+    def get_team_img_html(team_name, size, border_color, glow_size):
+        img_path = next((sq["img"] for sq in SQUADS_DATA if sq["name"] == team_name), "")
+        if os.path.exists(img_path):
+            bin_str = get_base64_of_bin_file(img_path)
+            return f"<img src='data:image/png;base64,{bin_str}' style='width: {size}px; height: {size}px; object-fit: cover; border-radius: 15px; border: 4px solid {border_color}; box-shadow: 0 0 {glow_size}px {border_color}88;'>"
+        return f"<div style='width: {size}px; height: {size}px; background-color: #222; border-radius: 15px; border: 4px solid {border_color}; display: inline-flex; align-items: center; justify-content: center; color: {border_color}; font-weight: 900;'>PENDING</div>"
+
+    def get_locked_html(height, border_color, title):
+        return f"""
+        <div style="border: 2px dashed {border_color}; border-radius: 15px; padding: 20px; text-align: center; height: {height}px; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: rgba(0,0,0,0.4);">
+            <div style="color: {border_color}; font-size: 3rem; margin-bottom: 10px; opacity: 0.5;">🔒</div>
+            <div style="color: #666; font-weight: 900; letter-spacing: 2px;">{title} LOCKED</div>
+        </div>
+        """
+
+    # --- 1ST PLACE BANNER (GOLD) ---
+    if stage >= 4:
+        first_place = ranking_data[0]["Team"]
+        st.markdown(f"""
+        <div style="border: 2px solid #FFD700; border-radius: 15px; padding: 40px; background: linear-gradient(135deg, #1a1a00 0%, #000000 100%); display: flex; align-items: center; justify-content: center; margin-top: 10px; margin-bottom: 30px; box-shadow: 0 0 30px rgba(255, 215, 0, 0.3);">
+            <div style="flex: 1; text-align: right; padding-right: 50px; border-right: 2px solid #333;">
+                {get_team_img_html(first_place, 300, '#FFD700', 30)}
+            </div>
+            <div style="flex: 2; padding-left: 50px; text-align: left;">
+                <div style="color: #FFD700; font-size: 4rem; margin: 0; font-weight: 900; letter-spacing: 4px; line-height: 1.1;">CONGRATULATIONS</div>
+                <div style="color: #FFFFFF; font-size: 3rem; margin-top: 15px; font-weight: 900; letter-spacing: 2px;">🏆 {first_place} 🏆</div>
+                <div style="color: #FFD700; font-size: 1.5rem; margin-top: 10px; font-weight: 700; letter-spacing: 1px;">1ST PLACE CHAMPION</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        # Tie-breaker 1: Highest Gold Medals
-        gold_counts = {}
-        for t in top_f1_teams:
-            if not df_medals.empty and t in df_medals["Team"].values:
-                golds = df_medals.loc[df_medals["Team"] == t, "🥇"].values[0]
-            else:
-                golds = 0
-            gold_counts[t] = golds
-        
-        max_golds = max(gold_counts.values()) if gold_counts else 0
-        top_gold_teams = [t for t, g in gold_counts.items() if g == max_golds]
-        
-        if len(top_gold_teams) == 1:
-            winning_team = top_gold_teams[0]
+        st.markdown(get_locked_html(300, "#FFD700", "CHAMPION"), unsafe_allow_html=True)
+        st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True)
+
+    # --- 2ND, 3RD, 4TH PLACE PODIUM ROW ---
+    r_col1, r_col2, r_col3 = st.columns(3)
+    
+    # 2ND PLACE (SILVER)
+    with r_col1:
+        if stage >= 3:
+            st.markdown(f"""
+            <div style="text-align: center; padding: 20px; background-color: #111; border-radius: 15px; border: 1px solid #333;">
+                <div style="color: #C0C0C0; font-weight: 900; letter-spacing: 2px; margin-bottom: 15px; font-size: 1.2rem;">2ND PLACE</div>
+                {get_team_img_html(ranking_data[1]["Team"], 150, '#C0C0C0', 15)}
+                <div style="color: #FFF; font-weight: 900; margin-top: 15px; font-size: 1.1rem;">{ranking_data[1]["Team"]}</div>
+            </div>
+            """, unsafe_allow_html=True)
         else:
-            tie_breaker_mode = True
-            tied_teams_list = top_gold_teams
+            st.markdown(get_locked_html(260, "#C0C0C0", "2ND PLACE"), unsafe_allow_html=True)
+            
+    # 3RD PLACE (BRONZE)
+    with r_col2:
+        if stage >= 2:
+            st.markdown(f"""
+            <div style="text-align: center; padding: 20px; background-color: #111; border-radius: 15px; border: 1px solid #333;">
+                <div style="color: #CD7F32; font-weight: 900; letter-spacing: 2px; margin-bottom: 15px; font-size: 1.2rem;">3RD PLACE</div>
+                {get_team_img_html(ranking_data[2]["Team"], 150, '#CD7F32', 15)}
+                <div style="color: #FFF; font-weight: 900; margin-top: 15px; font-size: 1.1rem;">{ranking_data[2]["Team"]}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(get_locked_html(260, "#CD7F32", "3RD PLACE"), unsafe_allow_html=True)
 
-if winning_team:
-    winning_img_path = ""
-    for sq in SQUADS_DATA:
-        if sq["name"] == winning_team:
-            winning_img_path = sq["img"]
-            break
-    
-    img_tag = ""
-    if os.path.exists(winning_img_path):
-        bin_str = get_base64_of_bin_file(winning_img_path)
-        img_tag = f"<img src='data:image/png;base64,{bin_str}' style='width: 300px; height: 300px; object-fit: cover; border-radius: 15px; border: 4px solid #FFD700; box-shadow: 0 0 25px rgba(255,215,0,0.6);'>"
-    else:
-        img_tag = "<div style='width: 300px; height: 300px; background-color: #222; border-radius: 15px; border: 4px solid #FFD700; display: inline-flex; align-items: center; justify-content: center; color: #FFD700; font-weight: 900; font-size: 1.5rem;'>PENDING</div>"
-
-    st.markdown(f"""
-    <div style="border: 2px solid #FFD700; border-radius: 15px; padding: 40px; background: linear-gradient(135deg, #1a1a1a 0%, #000000 100%); display: flex; align-items: center; justify-content: center; margin-top: 10px; margin-bottom: 20px; box-shadow: 0 0 30px rgba(255, 215, 0, 0.3);">
-        <div style="flex: 1; text-align: right; padding-right: 50px; border-right: 2px solid #333;">
-            {img_tag}
-        </div>
-        <div style="flex: 2; padding-left: 50px; text-align: left;">
-            <div style="color: #FFD700; font-size: 4rem; margin: 0; font-weight: 900; letter-spacing: 4px; line-height: 1.1;">CONGRATULATIONS</div>
-            <div style="color: #FFFFFF; font-size: 3rem; margin-top: 15px; font-weight: 900; letter-spacing: 2px;">🏆 {winning_team} 🏆</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-elif tie_breaker_mode:
-    tied_teams_str = " VS ".join(f"<span style='color: #FFF;'>{t}</span>" for t in tied_teams_list)
-    st.markdown(f"""
-    <div style="border: 2px solid #D71313; border-radius: 15px; padding: 40px; text-align: center; background: linear-gradient(135deg, #2a0000 0%, #000000 100%); margin-top: 10px; margin-bottom: 20px; box-shadow: 0 0 30px rgba(215, 19, 19, 0.4);">
-        <h1 style="color: #D71313; letter-spacing: 4px; margin: 0; font-size: 3rem; font-weight: 900;">🚨 SUDDEN DEATH REQUIRED 🚨</h1>
-        <h3 style="color: #AAA; letter-spacing: 2px; margin-top: 15px; margin-bottom: 25px;">F1 SCORES AND GOLD MEDALS ARE DEADLOCKED</h3>
-        <h2 style="font-size: 2.5rem; margin: 0;">{tied_teams_str}</h2>
-    </div>
-    """, unsafe_allow_html=True)
+    # 4TH PLACE (WOOD)
+    with r_col3:
+        if stage >= 1:
+            st.markdown(f"""
+            <div style="text-align: center; padding: 20px; background-color: #111; border-radius: 15px; border: 1px solid #333;">
+                <div style="color: #8B4513; font-weight: 900; letter-spacing: 2px; margin-bottom: 15px; font-size: 1.2rem;">4TH PLACE</div>
+                {get_team_img_html(ranking_data[3]["Team"], 150, '#8B4513', 15)}
+                <div style="color: #FFF; font-weight: 900; margin-top: 15px; font-size: 1.1rem;">{ranking_data[3]["Team"]}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(get_locked_html(260, "#8B4513", "4TH PLACE"), unsafe_allow_html=True)
 
 else:
     st.markdown("""
@@ -360,6 +425,7 @@ with st.expander("⚙️ ADMIN PROTOCOLS (RESTRICTED)"):
             if st.button("🔴 WIPE EVERYTHING"):
                 with st.spinner("Purging Systems..."):
                     wipe_data()
+                st.session_state['reveal_stage'] = 0 # Reset the reveal stage on wipe
                 st.success("CLEAN SLATE.")
                 time.sleep(1)
                 st.rerun()
