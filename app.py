@@ -408,7 +408,6 @@ if all_teams_finished and all_quests_finished:
         elif stage == 4:
             if st.button("🔒 HIDE RANKINGS (RESET)", use_container_width=True):
                 st.session_state['reveal_stage'] = 0
-                st.session_state['reveal_mvp'] = False
                 st.rerun()
     st.write("")
 
@@ -484,91 +483,94 @@ if all_teams_finished and all_quests_finished:
         else:
             st.markdown(get_locked_html(260, "#8B4513", "4TH PLACE"), unsafe_allow_html=True)
 
-    # --- TEAM MVPS SECTION (ONLY SHOWS AFTER STAGE 4 IS REVEALED) ---
-    if stage >= 4:
-        st.write("---")
-        st.write("")
-        st.markdown("<h3 style='text-align: center; color: #D71313; letter-spacing: 2px; font-size:1.5rem;'>// LIVE MVP POLL TALLY //</h3>", unsafe_allow_html=True)
-        
-        df_mvp = get_cached_mvps()
-        tally_cols = st.columns(4)
-        top_mvps = {}
-        
-        for i, team in enumerate(TEAMS_LIST):
-            with tally_cols[i]:
-                st.markdown(f"<div style='text-align: center; color: #FFF; font-weight: 900; letter-spacing: 1px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px;'>{team}</div>", unsafe_allow_html=True)
-                
-                # Render the votes if the dataframe isn't entirely empty
-                team_votes = pd.DataFrame()
-                if not df_mvp.empty and "Team" in df_mvp.columns and "Nominee" in df_mvp.columns:
-                    team_votes = df_mvp[df_mvp["Team"] == team]
-                
-                if not team_votes.empty:
-                    vote_counts = team_votes["Nominee"].value_counts().reset_index()
-                    vote_counts.columns = ["Nominee", "Votes"]
-                    
-                    top_mvps[team] = {"name": vote_counts.iloc[0]["Nominee"], "votes": vote_counts.iloc[0]["Votes"]}
-                    top_3 = vote_counts.head(3)
-                    
-                    for index, row in top_3.iterrows():
-                        color = "#FFD700" if index == 0 else "#C0C0C0" if index == 1 else "#CD7F32"
-                        st.markdown(f"""
-                        <div style='display: flex; justify-content: space-between; align-items: center; background-color: #111; padding: 10px 15px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid {color};'>
-                            <span style='color: #FFF; font-weight: bold; font-size: 0.9rem;'>{row["Nominee"]}</span>
-                            <span style='color: #D71313; font-weight: 900; font-size: 0.9rem;'>{row["Votes"]}</span>
-                        </div>
-                        """, unsafe_allow_html=True)
-                else:
-                    st.markdown("<div style='text-align: center; color: #555; padding: 10px; border: 1px dashed #333; border-radius: 8px;'>Awaiting votes...</div>", unsafe_allow_html=True)
-                    top_mvps[team] = None
-
-        st.write("")
-        st.write("")
-        
-        if not st.session_state['reveal_mvp']:
-            _, c_btn, _ = st.columns([1,2,1])
-            with c_btn:
-                if st.button("⭐ LOCK POLLS & REVEAL SQUAD MVPs ⭐", use_container_width=True):
-                    st.session_state['reveal_mvp'] = True
-                    st.rerun()
-        else:
-            st.markdown("<h3 style='text-align: center; color: #FFD700; letter-spacing: 2px; font-size:2rem; margin-top: 30px; margin-bottom: 30px;'>// OFFICIAL SQUAD MVPs //</h3>", unsafe_allow_html=True)
-            showcase_cols = st.columns(4)
-            
-            for i, team in enumerate(TEAMS_LIST):
-                with showcase_cols[i]:
-                    winner = top_mvps.get(team)
-                    if winner:
-                        st.markdown(f"""
-                        <div style='text-align: center; background: linear-gradient(135deg, #1a0000 0%, #000000 100%); padding: 30px 20px; border-radius: 15px; border: 2px solid #D71313; box-shadow: 0 0 25px rgba(215,19,19,0.3);'>
-                            <div style='color: #888; font-size: 0.9rem; margin-bottom: 15px; letter-spacing: 1px; font-weight: bold;'>{team}</div>
-                            <div style='font-size: 4rem; margin-bottom: 10px; line-height: 1;'>⭐</div>
-                            <div style='color: #FFF; font-weight: 900; font-size: 1.2rem; text-transform: uppercase; margin-bottom: 5px;'>{winner["name"]}</div>
-                            <div style='color: #D71313; font-weight: bold; font-size: 1rem;'>{winner["votes"]} VOTES</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"""
-                        <div style='text-align: center; background-color: #111; padding: 30px 20px; border-radius: 15px; border: 1px dashed #444;'>
-                            <div style='color: #888; font-size: 0.9rem; margin-bottom: 15px; letter-spacing: 1px; font-weight: bold;'>{team}</div>
-                            <div style='color: #444; font-size: 3rem; margin-bottom: 10px;'>🔒</div>
-                            <div style='color: #666; font-weight: bold;'>NO VOTES CAST</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-            
-            st.write("")
-            _, c_hide, _ = st.columns([1,2,1])
-            with c_hide:
-                if st.button("🔓 HIDE MVPs (BACK TO LIVE POLL)", use_container_width=True):
-                    st.session_state['reveal_mvp'] = False
-                    st.rerun()
-
 else:
     st.markdown("""
     <div style="border: 2px dashed #444; border-radius: 15px; padding: 40px; text-align: center; margin-top: 10px; margin-bottom: 20px;">
         <h2 style="color: #555; letter-spacing: 2px; margin: 0;">AWAITING ALL 5 QUESTS & FINAL PROMPT SUBMISSIONS...</h2>
     </div>
     """, unsafe_allow_html=True)
+
+st.write(""); st.write("")
+st.divider()
+
+# =====================================================================
+# --- SQUAD MVPS SECTION (ALWAYS VISIBLE - NOT TIED TO RANKINGS) ---
+# =====================================================================
+st.write("")
+st.markdown("<h3 style='text-align: center; color: #D71313; letter-spacing: 2px; font-size:1.5rem;'>// LIVE MVP POLL TALLY //</h3>", unsafe_allow_html=True)
+
+df_mvp = get_cached_mvps()
+tally_cols = st.columns(4)
+top_mvps = {}
+
+for i, team in enumerate(TEAMS_LIST):
+    with tally_cols[i]:
+        st.markdown(f"<div style='text-align: center; color: #FFF; font-weight: 900; letter-spacing: 1px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px;'>{team}</div>", unsafe_allow_html=True)
+        
+        # Render the votes if the dataframe isn't entirely empty
+        team_votes = pd.DataFrame()
+        if not df_mvp.empty and "Team" in df_mvp.columns and "Nominee" in df_mvp.columns:
+            team_votes = df_mvp[df_mvp["Team"] == team]
+        
+        if not team_votes.empty:
+            vote_counts = team_votes["Nominee"].value_counts().reset_index()
+            vote_counts.columns = ["Nominee", "Votes"]
+            
+            top_mvps[team] = {"name": vote_counts.iloc[0]["Nominee"], "votes": vote_counts.iloc[0]["Votes"]}
+            top_3 = vote_counts.head(3)
+            
+            for index, row in top_3.iterrows():
+                color = "#FFD700" if index == 0 else "#C0C0C0" if index == 1 else "#CD7F32"
+                st.markdown(f"""
+                <div style='display: flex; justify-content: space-between; align-items: center; background-color: #111; padding: 10px 15px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid {color};'>
+                    <span style='color: #FFF; font-weight: bold; font-size: 0.9rem;'>{row["Nominee"]}</span>
+                    <span style='color: #D71313; font-weight: 900; font-size: 0.9rem;'>{row["Votes"]}</span>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown("<div style='text-align: center; color: #555; padding: 10px; border: 1px dashed #333; border-radius: 8px;'>Awaiting votes...</div>", unsafe_allow_html=True)
+            top_mvps[team] = None
+
+st.write("")
+st.write("")
+
+if not st.session_state['reveal_mvp']:
+    _, c_btn, _ = st.columns([1,2,1])
+    with c_btn:
+        if st.button("⭐ LOCK POLLS & REVEAL SQUAD MVPs ⭐", use_container_width=True):
+            st.session_state['reveal_mvp'] = True
+            st.rerun()
+else:
+    st.markdown("<h3 style='text-align: center; color: #FFD700; letter-spacing: 2px; font-size:2rem; margin-top: 30px; margin-bottom: 30px;'>// OFFICIAL SQUAD MVPs //</h3>", unsafe_allow_html=True)
+    showcase_cols = st.columns(4)
+    
+    for i, team in enumerate(TEAMS_LIST):
+        with showcase_cols[i]:
+            winner = top_mvps.get(team)
+            if winner:
+                st.markdown(f"""
+                <div style='text-align: center; background: linear-gradient(135deg, #1a0000 0%, #000000 100%); padding: 30px 20px; border-radius: 15px; border: 2px solid #D71313; box-shadow: 0 0 25px rgba(215,19,19,0.3);'>
+                    <div style='color: #888; font-size: 0.9rem; margin-bottom: 15px; letter-spacing: 1px; font-weight: bold;'>{team}</div>
+                    <div style='font-size: 4rem; margin-bottom: 10px; line-height: 1;'>⭐</div>
+                    <div style='color: #FFF; font-weight: 900; font-size: 1.2rem; text-transform: uppercase; margin-bottom: 5px;'>{winner["name"]}</div>
+                    <div style='color: #D71313; font-weight: bold; font-size: 1rem;'>{winner["votes"]} VOTES</div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div style='text-align: center; background-color: #111; padding: 30px 20px; border-radius: 15px; border: 1px dashed #444;'>
+                    <div style='color: #888; font-size: 0.9rem; margin-bottom: 15px; letter-spacing: 1px; font-weight: bold;'>{team}</div>
+                    <div style='color: #444; font-size: 3rem; margin-bottom: 10px;'>🔒</div>
+                    <div style='color: #666; font-weight: bold;'>NO VOTES CAST</div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+    st.write("")
+    _, c_hide, _ = st.columns([1,2,1])
+    with c_hide:
+        if st.button("🔓 HIDE MVPs (BACK TO LIVE POLL)", use_container_width=True):
+            st.session_state['reveal_mvp'] = False
+            st.rerun()
 
 st.write(""); st.write("")
 
