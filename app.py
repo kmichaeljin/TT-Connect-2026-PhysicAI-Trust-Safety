@@ -3,10 +3,13 @@ import pandas as pd
 import base64
 import os
 import time
+import ssl
 
-# --- GOOGLE SHEETS IMPORTS ---
+# --- GOOGLE SHEETS & SLACK IMPORTS ---
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="PHYSICAI Main Dashboard", page_icon="🛡️", layout="wide")
@@ -31,6 +34,17 @@ ADMIN_PASSWORD = "COMMUNITY"
 SHEET_NAME = "PhysicAI_Leaderboard"
 WORKSHEET_SCORES = "Sheet1"
 WORKSHEET_MEDALS = "Medals"
+WORKSHEET_MVP = "MVP_Votes"
+
+# --- SLACK CONFIGURATION ---
+SLACK_CHANNEL_IDS = {
+    "BLUE ANALYSTS": "C0ATC7ZUL57",
+    "GRAY SHIELDS": "C0ASSV88Y03",
+    "GREEN DETECTIVES": "C0ASSV6BW9Z",
+    "VIOLET STRATEGISTS": "C0ASSV8CEJF"
+}
+POST_EVENT_SURVEY_LINK = "https://forms.gle/6NqWJGfTCVh2oquH8"
+MVP_VOTING_LINK = "https://tt-connect-2026-physicai-trust-safety-mvp-voting.streamlit.app/"
 
 # --- CACHED CONNECTION ---
 @st.cache_resource
@@ -72,6 +86,18 @@ def get_cached_medals():
             pass
     return pd.DataFrame(columns=["Quest", "Gold", "Silver", "Bronze", "Wood"])
 
+@st.cache_data(ttl=5)
+def get_cached_mvps():
+    sheet = connect_to_sheet(WORKSHEET_MVP)
+    if sheet:
+        try:
+            data = sheet.get_all_records()
+            if data:
+                return pd.DataFrame(data)
+        except:
+            pass
+    return pd.DataFrame(columns=["Team", "Nominee"])
+
 def record_medal_winners(quest_name, gold_team, silver_team, bronze_team, wood_team):
     sheet = connect_to_sheet(WORKSHEET_MEDALS)
     if sheet:
@@ -88,9 +114,15 @@ def wipe_data():
     if sheet2:
         sheet2.clear()
         sheet2.append_row(["Quest", "Gold", "Silver", "Bronze", "Wood"])
+        
+    sheet3 = connect_to_sheet(WORKSHEET_MVP)
+    if sheet3:
+        sheet3.clear()
+        sheet3.append_row(["Team", "Nominee"])
     
     get_cached_leaderboard.clear()
     get_cached_medals.clear()
+    get_cached_mvps.clear()
 
 def get_medal_standings(medal_df):
     if medal_df.empty:
@@ -117,9 +149,111 @@ def get_medal_standings(medal_df):
         df = df.sort_values(by=["Sort", "🥇", "🥈"], ascending=False).drop(columns=["Sort"])
     return df
 
+# --- SLACK BLAST FUNCTIONS ---
+def blast_rules_to_slack():
+    if "slack_bot_token" not in st.secrets: return False
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    client = WebClient(token=st.secrets["slack_bot_token"], ssl=ssl_context)
+    
+    rules_text = (
+        "🚨 *ATTENTION T&S!* 🚨\n\n"
+        "I am PhysicAI: Game Master. Welcome to TT Connect 2026's Trust & Safety Breakout Session. Our event is called PhysicAI: Trust & Safety.\n\n"
+        "Before we begin, you must memorize the rules of engagement:\n\n"
+        "🏆 *THE ULTIMATE GOAL*\n"
+        "Your objective is to achieve the highest F1 Score by accurately recreating a 'Secret Paragraph' that embodies our event theme: _Accomplish More_. You will earn the fragments of this paragraph by dominating a mix of physical and low-physical quests.\n\n"
+        "⚔️ *THE QUESTS & CLUES*\n"
+        "There are 5 quests. Your placement in each quest (Gold, Silver, Bronze, or Wood) dictates the quality of the clue you receive. The better your physical performance, the easier it will be to decode the secret paragraph.\n\n"
+        "📋 *SQUAD ROSTERS (13 Players)*\n"
+        "Divide your roster strategically based on physical and analytical strengths:\n"
+        "• *Quest 1: Volleyball* – 3 Players\n"
+        "• *Quest 2: Badminton* – 1 Player\n"
+        "• *Quest 3: Karaoke Relay* – 3 Players\n"
+        "• *Quest 4: Bottle Flip Tic-Tac-Toe* – 2 Players\n"
+        "• *Quest 5: Blind Golfer* – 2 Players\n"
+        "• *Main AI Decoders* – 2 Players (Main POCs for piecing together the final text)\n\n"
+        "🔄 *THE 'IMPORT' RULE*\n"
+        "Missing a player? Draft an 'Import' (community member). Limit: 1 Import for 1 game only per team. (Special cases may apply).\n\n"
+        "⏱️ *THE FINALE & SUBMISSION*\n"
+        "After all 5 quests, regroup in the main function room. You have exactly 30 minutes to collaborate, refine your text, and lock in your final answer on the main checker app.\n\n"
+        "👑 *CROWNING THE CHAMPION (TIE-BREAKERS)*\n"
+        "1. *The Gold Standard:* The tied team with the most Gold Medals across the quests takes the crown.\n"
+        "2. *Sudden Death:* If teams are still tied, they face off in a special, sudden-death physical quest.\n\n"
+        "_*NOTE:* The complete, in-depth rules will be explained during the breakout session. For reference, you can view this: https://canva.link/wo8hmv5w4ej14e8_"
+    )
+    
+    success_count = 0
+    for team, channel_id in SLACK_CHANNEL_IDS.items():
+        if channel_id.startswith("C"):  
+            try:
+                client.chat_postMessage(channel=channel_id, text=rules_text)
+                success_count += 1
+            except SlackApiError as e:
+                st.error(f"Error sending to {team} ({channel_id}): {e.response['error']}")
+    return success_count > 0
+
+def blast_survey_to_slack():
+    if "slack_bot_token" not in st.secrets:
+        st.error("⚠️ Slack Bot Token not found in Streamlit secrets!")
+        return False
+    
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    client = WebClient(token=st.secrets["slack_bot_token"], ssl=ssl_context)
+    
+    message = (
+        "📣 Thank you for joining and participating in our breakout session - PhysicAI: Trust & Safety 📣\n\n"
+        "To continue creating awesome breakout sessions or any engagement activities for our department, WE NEED YOUR VOICE 🗣️\n\n"
+        f"Please answer our POST-EVENT SURVEY, we would appreciate your honesty and feedback. Here's our survey link: {POST_EVENT_SURVEY_LINK}\n\n"
+        "Thank you so much! 🎊"
+    )
+    
+    success_count = 0
+    for team, channel_id in SLACK_CHANNEL_IDS.items():
+        if channel_id.startswith("C"):  
+            try:
+                client.chat_postMessage(channel=channel_id, text=message)
+                success_count += 1
+            except SlackApiError as e:
+                st.error(f"Error sending to {team} ({channel_id}): {e.response['error']}")
+    
+    return success_count > 0
+
+def blast_mvp_link_to_slack():
+    """Broadcasts the MVP voting link to all squads."""
+    if "slack_bot_token" not in st.secrets:
+        st.error("⚠️ Slack Bot Token not found in Streamlit secrets!")
+        return False
+        
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    client = WebClient(token=st.secrets["slack_bot_token"], ssl=ssl_context)
+    
+    message = (
+        "🚨 *ATTENTION SQUADS: IT'S TIME TO VOTE FOR YOUR MVP!* 🚨\n\n"
+        "Who carried the team? Who cracked the hardest codes? Who had the best energy? \n\n"
+        f"Cast your vote for your Squad MVP here: {MVP_VOTING_LINK}\n\n"
+        "Make sure to submit your vote before the polls close! ⭐"
+    )
+    
+    success_count = 0
+    for team, channel_id in SLACK_CHANNEL_IDS.items():
+        if channel_id.startswith("C"):  
+            try:
+                client.chat_postMessage(channel=channel_id, text=message)
+                success_count += 1
+            except SlackApiError as e:
+                st.error(f"Error sending to {team} ({channel_id}): {e.response['error']}")
+                
+    return success_count > 0
+
 # --- SESSION STATE ---
 if 'admin_logged_in' not in st.session_state: st.session_state['admin_logged_in'] = False
-if 'reveal_stage' not in st.session_state: st.session_state['reveal_stage'] = 0 # 0=Locked, 1=4th, 2=3rd, 3=2nd, 4=Champion
+if 'reveal_stage' not in st.session_state: st.session_state['reveal_stage'] = 0 
+if 'reveal_mvp' not in st.session_state: st.session_state['reveal_mvp'] = False
 
 # --- ASSETS & CSS ---
 def get_base64_of_bin_file(bin_file):
@@ -274,6 +408,7 @@ if all_teams_finished and all_quests_finished:
         elif stage == 4:
             if st.button("🔒 HIDE RANKINGS (RESET)", use_container_width=True):
                 st.session_state['reveal_stage'] = 0
+                st.session_state['reveal_mvp'] = False
                 st.rerun()
     st.write("")
 
@@ -291,7 +426,6 @@ if all_teams_finished and all_quests_finished:
             
         ranking_data.append({"Team": team, "Score": score, "G": g, "S": s, "B": b})
 
-    # Sort: Highest F1 -> Highest Gold -> Highest Silver -> Highest Bronze
     ranking_data.sort(key=lambda x: (x["Score"], x["G"], x["S"], x["B"]), reverse=True)
     
     # HTML Generators
@@ -332,44 +466,102 @@ if all_teams_finished and all_quests_finished:
     # --- 2ND, 3RD, 4TH PLACE PODIUM ROW ---
     r_col1, r_col2, r_col3 = st.columns(3)
     
-    # 2ND PLACE (SILVER)
     with r_col1:
         if stage >= 3:
-            st.markdown(f"""
-            <div style="text-align: center; padding: 20px; background-color: #111; border-radius: 15px; border: 1px solid #333;">
-                <div style="color: #C0C0C0; font-weight: 900; letter-spacing: 2px; margin-bottom: 15px; font-size: 1.2rem;">2ND PLACE</div>
-                {get_team_img_html(ranking_data[1]["Team"], 150, '#C0C0C0', 15)}
-                <div style="color: #FFF; font-weight: 900; margin-top: 15px; font-size: 1.1rem;">{ranking_data[1]["Team"]}</div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div style="text-align: center; padding: 20px; background-color: #111; border-radius: 15px; border: 1px solid #333;"><div style="color: #C0C0C0; font-weight: 900; letter-spacing: 2px; margin-bottom: 15px; font-size: 1.2rem;">2ND PLACE</div>{get_team_img_html(ranking_data[1]["Team"], 150, '#C0C0C0', 15)}<div style="color: #FFF; font-weight: 900; margin-top: 15px; font-size: 1.1rem;">{ranking_data[1]["Team"]}</div></div>""", unsafe_allow_html=True)
         else:
             st.markdown(get_locked_html(260, "#C0C0C0", "2ND PLACE"), unsafe_allow_html=True)
             
-    # 3RD PLACE (BRONZE)
     with r_col2:
         if stage >= 2:
-            st.markdown(f"""
-            <div style="text-align: center; padding: 20px; background-color: #111; border-radius: 15px; border: 1px solid #333;">
-                <div style="color: #CD7F32; font-weight: 900; letter-spacing: 2px; margin-bottom: 15px; font-size: 1.2rem;">3RD PLACE</div>
-                {get_team_img_html(ranking_data[2]["Team"], 150, '#CD7F32', 15)}
-                <div style="color: #FFF; font-weight: 900; margin-top: 15px; font-size: 1.1rem;">{ranking_data[2]["Team"]}</div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div style="text-align: center; padding: 20px; background-color: #111; border-radius: 15px; border: 1px solid #333;"><div style="color: #CD7F32; font-weight: 900; letter-spacing: 2px; margin-bottom: 15px; font-size: 1.2rem;">3RD PLACE</div>{get_team_img_html(ranking_data[2]["Team"], 150, '#CD7F32', 15)}<div style="color: #FFF; font-weight: 900; margin-top: 15px; font-size: 1.1rem;">{ranking_data[2]["Team"]}</div></div>""", unsafe_allow_html=True)
         else:
             st.markdown(get_locked_html(260, "#CD7F32", "3RD PLACE"), unsafe_allow_html=True)
 
-    # 4TH PLACE (WOOD)
     with r_col3:
         if stage >= 1:
-            st.markdown(f"""
-            <div style="text-align: center; padding: 20px; background-color: #111; border-radius: 15px; border: 1px solid #333;">
-                <div style="color: #8B4513; font-weight: 900; letter-spacing: 2px; margin-bottom: 15px; font-size: 1.2rem;">4TH PLACE</div>
-                {get_team_img_html(ranking_data[3]["Team"], 150, '#8B4513', 15)}
-                <div style="color: #FFF; font-weight: 900; margin-top: 15px; font-size: 1.1rem;">{ranking_data[3]["Team"]}</div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div style="text-align: center; padding: 20px; background-color: #111; border-radius: 15px; border: 1px solid #333;"><div style="color: #8B4513; font-weight: 900; letter-spacing: 2px; margin-bottom: 15px; font-size: 1.2rem;">4TH PLACE</div>{get_team_img_html(ranking_data[3]["Team"], 150, '#8B4513', 15)}<div style="color: #FFF; font-weight: 900; margin-top: 15px; font-size: 1.1rem;">{ranking_data[3]["Team"]}</div></div>""", unsafe_allow_html=True)
         else:
             st.markdown(get_locked_html(260, "#8B4513", "4TH PLACE"), unsafe_allow_html=True)
+
+    # --- TEAM MVPS SECTION (ONLY SHOWS AFTER STAGE 4 IS REVEALED) ---
+    if stage >= 4:
+        st.write("---")
+        st.write("")
+        st.markdown("<h3 style='text-align: center; color: #D71313; letter-spacing: 2px; font-size:1.5rem;'>// LIVE MVP POLL TALLY //</h3>", unsafe_allow_html=True)
+        
+        df_mvp = get_cached_mvps()
+        tally_cols = st.columns(4)
+        top_mvps = {}
+        
+        for i, team in enumerate(TEAMS_LIST):
+            with tally_cols[i]:
+                st.markdown(f"<div style='text-align: center; color: #FFF; font-weight: 900; letter-spacing: 1px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px;'>{team}</div>", unsafe_allow_html=True)
+                
+                # Render the votes if the dataframe isn't entirely empty
+                team_votes = pd.DataFrame()
+                if not df_mvp.empty and "Team" in df_mvp.columns and "Nominee" in df_mvp.columns:
+                    team_votes = df_mvp[df_mvp["Team"] == team]
+                
+                if not team_votes.empty:
+                    vote_counts = team_votes["Nominee"].value_counts().reset_index()
+                    vote_counts.columns = ["Nominee", "Votes"]
+                    
+                    top_mvps[team] = {"name": vote_counts.iloc[0]["Nominee"], "votes": vote_counts.iloc[0]["Votes"]}
+                    top_3 = vote_counts.head(3)
+                    
+                    for index, row in top_3.iterrows():
+                        color = "#FFD700" if index == 0 else "#C0C0C0" if index == 1 else "#CD7F32"
+                        st.markdown(f"""
+                        <div style='display: flex; justify-content: space-between; align-items: center; background-color: #111; padding: 10px 15px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid {color};'>
+                            <span style='color: #FFF; font-weight: bold; font-size: 0.9rem;'>{row["Nominee"]}</span>
+                            <span style='color: #D71313; font-weight: 900; font-size: 0.9rem;'>{row["Votes"]}</span>
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.markdown("<div style='text-align: center; color: #555; padding: 10px; border: 1px dashed #333; border-radius: 8px;'>Awaiting votes...</div>", unsafe_allow_html=True)
+                    top_mvps[team] = None
+
+        st.write("")
+        st.write("")
+        
+        if not st.session_state['reveal_mvp']:
+            _, c_btn, _ = st.columns([1,2,1])
+            with c_btn:
+                if st.button("⭐ LOCK POLLS & REVEAL SQUAD MVPs ⭐", use_container_width=True):
+                    st.session_state['reveal_mvp'] = True
+                    st.rerun()
+        else:
+            st.markdown("<h3 style='text-align: center; color: #FFD700; letter-spacing: 2px; font-size:2rem; margin-top: 30px; margin-bottom: 30px;'>// OFFICIAL SQUAD MVPs //</h3>", unsafe_allow_html=True)
+            showcase_cols = st.columns(4)
+            
+            for i, team in enumerate(TEAMS_LIST):
+                with showcase_cols[i]:
+                    winner = top_mvps.get(team)
+                    if winner:
+                        st.markdown(f"""
+                        <div style='text-align: center; background: linear-gradient(135deg, #1a0000 0%, #000000 100%); padding: 30px 20px; border-radius: 15px; border: 2px solid #D71313; box-shadow: 0 0 25px rgba(215,19,19,0.3);'>
+                            <div style='color: #888; font-size: 0.9rem; margin-bottom: 15px; letter-spacing: 1px; font-weight: bold;'>{team}</div>
+                            <div style='font-size: 4rem; margin-bottom: 10px; line-height: 1;'>⭐</div>
+                            <div style='color: #FFF; font-weight: 900; font-size: 1.2rem; text-transform: uppercase; margin-bottom: 5px;'>{winner["name"]}</div>
+                            <div style='color: #D71313; font-weight: bold; font-size: 1rem;'>{winner["votes"]} VOTES</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"""
+                        <div style='text-align: center; background-color: #111; padding: 30px 20px; border-radius: 15px; border: 1px dashed #444;'>
+                            <div style='color: #888; font-size: 0.9rem; margin-bottom: 15px; letter-spacing: 1px; font-weight: bold;'>{team}</div>
+                            <div style='color: #444; font-size: 3rem; margin-bottom: 10px;'>🔒</div>
+                            <div style='color: #666; font-weight: bold;'>NO VOTES CAST</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+            
+            st.write("")
+            _, c_hide, _ = st.columns([1,2,1])
+            with c_hide:
+                if st.button("🔓 HIDE MVPs (BACK TO LIVE POLL)", use_container_width=True):
+                    st.session_state['reveal_mvp'] = False
+                    st.rerun()
 
 else:
     st.markdown("""
@@ -396,11 +588,20 @@ with st.expander("⚙️ ADMIN PROTOCOLS (RESTRICTED)"):
                     st.error("❌ INVALID KEY")
     else:
         st.success("✅ SYSTEM ACCESS GRANTED")
-        tab1, tab2 = st.tabs(["🏅 AWARD MEDALS", "🔴 DANGER ZONE"])
+        tab1, tab2, tab3 = st.tabs(["🏅 AWARD MEDALS", "🔴 DANGER ZONE", "📣 COMM CENTER"])
         
         with tab1:
             st.info("Award Medals (Auto-filters previously selected teams)")
-            quest_select = st.selectbox("Select Quest:", ["QUEST 1: BEACH VOLLEYBALL", "QUEST 2: BADMINTON", "QUEST 3: KARAOKE RELAY", "QUEST 4: BOTTLE FLIP TIC TAC TOE", "QUEST 5: BLIND GOLFER"])
+            
+            quest_select = st.selectbox("Select Quest:", [
+                "QUEST 1: BEACH VOLLEYBALL", 
+                "QUEST 2: BADMINTON", 
+                "QUEST 3: KARAOKE RELAY", 
+                "QUEST 4: BOTTLE FLIP TIC TAC TOE", 
+                "QUEST 5: BLIND GOLFER",
+                "🚨 SUDDEN DEATH: TIE-BREAKER 🚨"
+            ])
+            
             col_g, col_s, col_b, col_w = st.columns(4)
             with col_g: gold = st.selectbox("🥇 GOLD", TEAMS_LIST, index=None, placeholder="1st")
             silver_options = [t for t in TEAMS_LIST if t != gold] if gold else TEAMS_LIST
@@ -425,11 +626,49 @@ with st.expander("⚙️ ADMIN PROTOCOLS (RESTRICTED)"):
             if st.button("🔴 WIPE EVERYTHING"):
                 with st.spinner("Purging Systems..."):
                     wipe_data()
-                st.session_state['reveal_stage'] = 0 # Reset the reveal stage on wipe
+                st.session_state['reveal_stage'] = 0 
+                st.session_state['reveal_mvp'] = False
                 st.success("CLEAN SLATE.")
                 time.sleep(1)
                 st.rerun()
+
+        with tab3:
+            st.info("Broadcast final messages and links to all team channels simultaneously.")
+            
+            # --- WELCOME & RULES BLAST ---
+            st.markdown("#### 📜 Welcome & Rules Blast")
+            if st.button("🚀 INITIATE RULES BLAST", use_container_width=True):
+                with st.spinner("Transmitting rules to Slack via xoxb- token..."):
+                    if blast_rules_to_slack():
+                        st.success("✅ Rules successfully transmitted to all active squads!")
+                    else:
+                        st.error("❌ Transmission failed. Check the error logs above.")
+            
+            st.divider()
+
+            # --- MVP VOTING BLAST ---
+            st.markdown("#### 🏆 MVP Voting Blast")
+            st.code(MVP_VOTING_LINK, language="text")
+            if st.button("🚀 INITIATE MVP VOTING BLAST", use_container_width=True):
+                with st.spinner("Transmitting MVP link to Slack via xoxb- token..."):
+                    if blast_mvp_link_to_slack():
+                        st.success("✅ MVP Voting link successfully transmitted to all active squads!")
+                    else:
+                        st.error("❌ Transmission failed. Check the error logs above.")
+            
+            st.divider()
+            
+            # --- POST EVENT SURVEY BLAST ---
+            st.markdown("#### 📝 Post-Event Survey Blast")
+            st.code(POST_EVENT_SURVEY_LINK, language="text")
+            if st.button("🚀 INITIATE SURVEY BLAST", use_container_width=True):
+                with st.spinner("Transmitting Survey link to Slack via xoxb- token..."):
+                    if blast_survey_to_slack():
+                        st.success("✅ Survey successfully transmitted to all active squads!")
+                    else:
+                        st.error("❌ Transmission failed. Check the error logs above.")
         
+        st.divider()
         if st.button("LOG OUT"):
             st.session_state['admin_logged_in'] = False
             st.rerun()
